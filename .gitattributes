@@ -1,0 +1,5 @@
+# ============ GitHub 语言统计排除 ============
+# Newman 生成的 HTML 测试报告是「产物」，不是源码。
+# 不加这一行的话，GitHub 会因为这份 928KB 的报告是本仓库最大的文本文件，
+# 把整个项目标记成 "HTML" 项目 —— 对接口测试项目来说是误导。
+report/*.html linguist-documentation
