@@ -1,0 +1,24 @@
+# ============ 编辑器 ============
+.vscode/
+.idea/
+*.swp
+
+# ============ Node（以后若加 npm 工程） ============
+node_modules/
+npm-debug.log*
+
+# ============ Windows 系统文件 ============
+Thumbs.db
+Desktop.ini
+
+# ============ 日志与临时文件 ============
+*.log
+*.tmp
+~$*
+
+# ============ 说明 ============
+# 1) report/ 目录【不忽略】—— HTML 测试报告是交付物的一部分，
+#    面试/评审可以直接打开 report/ruoyi-api-report.html 查看结果。
+# 2) postman/RuoYi-Local.postman_environment.json 【可以提交】—— 其中的 token
+#    已经清空。如果以后往环境变量里放真实凭证（密码、密钥），请改为忽略该文件，
+#    改用系统环境变量或 CI 密钥注入。

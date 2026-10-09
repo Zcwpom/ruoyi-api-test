@@ -1,0 +1,2070 @@
+{
+  "info": {
+    "_postman_id": "62f94ab3-1cca-4213-a6c5-3e8271bca216",
+    "name": "RuoYi-Vue 接口测试练习",
+    "description": "若依前后端分离版（RuoYi-Vue）接口测试练习集合。\n\n用法：\n1. 先启动本地若依后端（默认 http://localhost:8080）\n2. 导入本集合 + RuoYi-Local.postman_environment.json，并切换到该环境\n3. 按顺序执行「00 登录与鉴权」→「01 用户管理」→ ... \n\n注意：集合根节点已设置 Bearer {{token}} 鉴权，登录类接口单独设为 No Auth。\n验证码建议在测试环境通过 sys_config 表将 sys.account.captchaEnabled 置为 false。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "58810700",
+    "_collection_link": "https://go.postman.co/collection/58810700-62f94ab3-1cca-4213-a6c5-3e8271bca216?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "00 登录与鉴权",
+      "item": [
+        {
+          "name": "01 获取验证码 GET /captchaImage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"包含 captchaEnabled 字段\", () => {",
+                  "  pm.expect(json).to.have.property(\"captchaEnabled\");",
+                  "});",
+                  "// 注意：3.9.x 的 CaptchaController 在验证码关闭时只返回 captchaEnabled，不含 uuid / img",
+                  "if (json.captchaEnabled) {",
+                  "  pm.test(\"验证码开启时应返回 uuid 与 img\", () => {",
+                  "    pm.expect(json.uuid).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(json.img).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"uuid\", json.uuid);",
+                  "} else {",
+                  "  pm.environment.set(\"uuid\", \"\");",
+                  "}",
+                  "if (json.captchaEnabled === false) {",
+                  "  console.log(\"验证码已关闭，登录时 code 可为空（仅测试环境配置）\");",
+                  "} else {",
+                  "  console.log(\"验证码开启：请识别图片后填入 captchaCode 变量，或在测试环境关闭 sys.account.captchaEnabled\");",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/captchaImage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "captchaImage"
+              ]
+            },
+            "description": "获取图形验证码。返回 captchaEnabled、uuid、img(base64)。"
+          },
+          "response": []
+        },
+        {
+          "name": "02 登录 POST /login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（登录成功）\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回 token 且非空\", () => {",
+                  "  pm.expect(json.token, JSON.stringify(json)).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "// 核心：接口关联，把 token 写入环境变量，后续所有接口通过集合级 Bearer {{token}} 使用",
+                  "if (json.token) {",
+                  "  pm.environment.set(\"token\", json.token);",
+                  "  pm.environment.set(\"tokenObtainedAt\", String(Date.now()));",
+                  "}",
+                  "// 阈值依据：实测稳态约 170ms（含 BCrypt 慢哈希）；冷启动首请求可达 3~4s",
+                  "// 取 5000ms 作兜底，只用于发现接口彻底挂死；真正的性能验证交给 JMeter",
+                  "pm.test(\"响应时间 < 5000ms（冷启动兜底）\", () => pm.expect(pm.response.responseTime).to.be.below(5000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{captchaCode}}\",\n  \"uuid\": \"{{uuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "description": "登录接口。测试环境关闭验证码后 code 可为空字符串。"
+          },
+          "response": []
+        },
+        {
+          "name": "03 获取用户信息 GET /getInfo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回 user / roles / permissions\", () => {",
+                  "  pm.expect(json).to.have.property(\"user\");",
+                  "  pm.expect(json).to.have.property(\"roles\");",
+                  "  pm.expect(json).to.have.property(\"permissions\");",
+                  "  pm.expect(json.roles).to.be.an(\"array\").and.not.empty;",
+                  "  pm.expect(json.permissions).to.be.an(\"array\");",
+                  "});",
+                  "// 3.9.x 额外返回 pwdChrtype / isDefaultModifyPwd / isPasswordExpired，属正常版本差异",
+                  "pm.test(\"用户名与登录账号一致\", () => {",
+                  "  pm.expect(json.user.userName).to.eql(pm.environment.get(\"username\"));",
+                  "});",
+                  "// 记录权限数量，方便观察 admin 与 ry 的差异",
+                  "console.log(\"权限点数量：\" + json.permissions.length + \"，角色：\" + JSON.stringify(json.roles));",
+                  "pm.environment.set(\"permissionCount\", String(json.permissions.length));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/getInfo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "getInfo"
+              ]
+            },
+            "description": "获取当前登录用户的用户信息、角色、权限标识集合。"
+          },
+          "response": []
+        },
+        {
+          "name": "04 获取路由菜单 GET /getRouters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"data 是路由数组且非空\", () => {",
+                  "  pm.expect(json.data).to.be.an(\"array\").and.not.empty;",
+                  "});",
+                  "// 权限差异验证：ry 账号的菜单数量应显著少于 admin",
+                  "console.log(\"一级菜单数量：\" + json.data.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/getRouters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "getRouters"
+              ]
+            },
+            "description": "获取当前用户可见的菜单路由树，是权限测试的重要观察点。"
+          },
+          "response": []
+        },
+        {
+          "name": "05 退出登录 POST /logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（退出成功）\", () => pm.expect(json.code).to.eql(200));",
+                  "// 退出后清空本地 token，模拟真实会话结束",
+                  "pm.environment.unset(\"token\");",
+                  "pm.environment.unset(\"tokenObtainedAt\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logout"
+              ]
+            },
+            "description": "退出登录，服务端使当前 token 失效。"
+          },
+          "response": []
+        },
+        {
+          "name": "06 未授权访问（反向用例）GET /system/user/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200（若依统一响应体）\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"无 token 时业务 code = 401\", () => pm.expect(json.code).to.eql(401));",
+                  "pm.test(\"提示认证失败\", () => {",
+                  "  pm.expect(json.msg).to.include(\"认证失败\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "反向用例：故意不带 token，验证鉴权拦截生效。这是接口测试的必备负向场景。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 用户管理",
+      "item": [
+        {
+          "name": "91 已知缺陷回归",
+          "item": [
+            {
+              "name": "回归-缺陷009-isAsc非法值",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();\nconst body = JSON.stringify(json);\n\n// 缺陷 #009：isAsc 未校验导致 SQL 与服务器路径泄露\n// 期望：isAsc 做 asc/desc 枚举校验\n// 当前状态：红灯（缺陷未修复）\n\npm.test(\"[缺陷009] 不得泄露原始 SQL 语句\", () => {\n  pm.expect(body).to.not.include(\"SELECT\");\n  pm.expect(body).to.not.include(\"### SQL:\");\n  pm.expect(body).to.not.include(\"sys_user\");\n});\n\npm.test(\"[缺陷009] 不得泄露数据库异常信息\", () => {\n  pm.expect(body).to.not.include(\"SQLSyntaxErrorException\");\n  pm.expect(body).to.not.include(\"### Error querying database\");\n});\n\npm.test(\"[缺陷009] 不得泄露服务器路径与 Jar 包内部结构\", () => {\n  pm.expect(body).to.not.include(\"BOOT-INF\");\n  pm.expect(body).to.not.include(\"nested:\");\n  pm.expect(body).to.not.include(\"Mapper.xml\");\n});\n\n"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/system/user/list?pageNum=1&pageSize=10&orderByColumn=userName&isAsc=xxx",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "system",
+                    "user",
+                    "list"
+                  ],
+                  "query": [
+                    {
+                      "key": "pageNum",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "10"
+                    },
+                    {
+                      "key": "userName",
+                      "value": "",
+                      "description": "模糊查询：按登录账号过滤，可做参数化",
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": "0",
+                      "description": "0 正常 / 1 停用",
+                      "disabled": true
+                    },
+                    {
+                      "key": "phonenumber",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "beginTime",
+                      "value": "",
+                      "description": "创建时间起，格式 yyyy-MM-dd",
+                      "disabled": true
+                    },
+                    {
+                      "key": "endTime",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "orderByColumn",
+                      "value": "userName"
+                    },
+                    {
+                      "key": "isAsc",
+                      "value": "xxx"
+                    }
+                  ]
+                },
+                "description": "用户列表（分页 + 多条件查询）。这是练习断言体系的主战场。"
+              },
+              "response": [
+                {
+                  "name": "异常-isAsc非法值 GET /system/user/list",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/system/user/list?pageNum=1&pageSize=10&orderByColumn=userName&isAsc=xxx",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "system",
+                        "user",
+                        "list"
+                      ],
+                      "query": [
+                        {
+                          "key": "pageNum",
+                          "value": "1"
+                        },
+                        {
+                          "key": "pageSize",
+                          "value": "10"
+                        },
+                        {
+                          "key": "userName",
+                          "value": "",
+                          "description": "模糊查询：按登录账号过滤，可做参数化",
+                          "disabled": true
+                        },
+                        {
+                          "key": "status",
+                          "value": "0",
+                          "description": "0 正常 / 1 停用",
+                          "disabled": true
+                        },
+                        {
+                          "key": "phonenumber",
+                          "value": "",
+                          "disabled": true
+                        },
+                        {
+                          "key": "beginTime",
+                          "value": "",
+                          "description": "创建时间起，格式 yyyy-MM-dd",
+                          "disabled": true
+                        },
+                        {
+                          "key": "endTime",
+                          "value": "",
+                          "disabled": true
+                        },
+                        {
+                          "key": "orderByColumn",
+                          "value": "userName"
+                        },
+                        {
+                          "key": "isAsc",
+                          "value": "xxx"
+                        }
+                      ]
+                    }
+                  },
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "vary",
+                      "value": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+                    },
+                    {
+                      "key": "x-content-type-options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "x-xss-protection",
+                      "value": "0"
+                    },
+                    {
+                      "key": "x-frame-options",
+                      "value": "SAMEORIGIN"
+                    },
+                    {
+                      "key": "content-type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "content-length",
+                      "value": "1133"
+                    },
+                    {
+                      "key": "date",
+                      "value": "Fri, 09 Oct 2026 09:48:54 GMT"
+                    },
+                    {
+                      "key": "keep-alive",
+                      "value": "timeout=60"
+                    },
+                    {
+                      "key": "connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"msg\": \"\\r\\n### Error querying database.  Cause: java.sql.SQLSyntaxErrorException: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'xxx\\n LIMIT 10' at line 1\\r\\n### The error may exist in URL [jar:nested:/E:/学习/RuoYi-Vue/ruoyi-admin/target/ruoyi-admin.jar/!BOOT-INF/lib/ruoyi-system-3.9.2.jar!/mapper/system/SysUserMapper.xml]\\r\\n### The error may involve com.ruoyi.system.mapper.SysUserMapper.selectUserList-Inline\\r\\n### The error occurred while setting parameters\\r\\n### SQL: SELECT u.user_id, u.dept_id, u.nick_name, u.user_name, u.email, u.avatar, u.phonenumber, u.sex, u.status, u.del_flag, u.login_ip, u.login_date, u.create_by, u.create_time, u.remark, d.dept_name, d.leader FROM sys_user u LEFT JOIN sys_dept d ON u.dept_id = d.dept_id WHERE u.del_flag = '0' order by user_name xxx  LIMIT ?\\r\\n### Cause: java.sql.SQLSyntaxErrorException: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'xxx\\n LIMIT 10' at line 1\\n; bad SQL grammar []\",\n  \"code\": 500\n}"
+                }
+              ]
+            },
+            {
+              "name": "回归-缺陷007-pageNum非法值",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();\n\n// 缺陷 #007：pageNum 传非数字被静默当成默认值\n// 期望：明确报错，与 userId 的行为一致\n// 当前状态：红灯（缺陷未修复）\n\npm.test(\"[缺陷007] pageNum 传非数字应明确报错，而非静默降级\", () => {\n  pm.expect(json.code, JSON.stringify(json)).to.not.eql(200);\n});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/system/user/list?pageNum=abc&pageSize=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "system",
+                    "user",
+                    "list"
+                  ],
+                  "query": [
+                    {
+                      "key": "pageNum",
+                      "value": "abc"
+                    },
+                    {
+                      "key": "userName",
+                      "value": "",
+                      "description": "模糊查询：按登录账号过滤，可做参数化",
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": "0",
+                      "description": "0 正常 / 1 停用",
+                      "disabled": true
+                    },
+                    {
+                      "key": "phonenumber",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "beginTime",
+                      "value": "",
+                      "description": "创建时间起，格式 yyyy-MM-dd",
+                      "disabled": true
+                    },
+                    {
+                      "key": "endTime",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "用户列表（分页 + 多条件查询）。这是练习断言体系的主战场。"
+              },
+              "response": []
+            },
+            {
+              "name": "回归-缺陷001-查询不存在的用户",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();\nconst body = JSON.stringify(json);\n\n// 缺陷 #001：查询不存在的用户返回 Java 异常信息\n// 期望：返回可读提示，不泄露后端内部信息\n// 当前状态：红灯（缺陷未修复），修复后应自动转绿\n\npm.test(\"[缺陷001] 不得泄露后端包名/类名/方法名\", () => {\n  pm.expect(body).to.not.match(/com\\.ruoyi|SysUser|getRoles|java\\.lang/);\n});\n\npm.test(\"[缺陷001] 不得返回 Java 运行时异常文案\", () => {\n  pm.expect(body).to.not.include(\"Cannot invoke\");\n});\n\npm.test(\"[缺陷001] 应返回可读的业务提示\", () => {\n  pm.expect(String(json.msg)).to.match(/[\\u4e00-\\u9fa5]/);\n});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/system/user/999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "system",
+                    "user",
+                    "999999"
+                  ],
+                  "query": [
+                    {
+                      "key": "userName",
+                      "value": "",
+                      "description": "模糊查询：按登录账号过滤，可做参数化",
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": "",
+                      "description": "0 正常 / 1 停用",
+                      "disabled": true
+                    },
+                    {
+                      "key": "phonenumber",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "beginTime",
+                      "value": "",
+                      "description": "创建时间起，格式 yyyy-MM-dd",
+                      "disabled": true
+                    },
+                    {
+                      "key": "endTime",
+                      "value": "",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "用户列表（分页 + 多条件查询）。这是练习断言体系的主战场。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "01 用户列表 GET /system/user/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));\nconst json = pm.response.json();\npm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));\npm.test(\"分页结构完整\", () => {\n  pm.expect(json).to.have.property(\"total\");\n  pm.expect(json).to.have.property(\"rows\");\n  pm.expect(json.total).to.be.a(\"number\");\n  pm.expect(json.rows).to.be.an(\"array\");\n});\npm.test(\"分页大小生效\", () => pm.expect(json.rows.length).to.be.at.most(10));\npm.test(\"关键字段类型正确\", () => {\n  json.rows.forEach(row => {\n    pm.expect(row.userId).to.be.a(\"number\");\n    pm.expect(row.userName).to.be.a(\"string\");\n    pm.expect(row.status).to.be.a(\"string\");\n  });\n});\npm.test(\"响应时间 < 2000ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));\n// JSON Schema 校验（结构契约测试）\nconst schema = {\n  type: \"object\",\n  required: [\"total\", \"rows\", \"code\", \"msg\"],\n  properties: {\n    total: { type: \"number\" },\n    code: { type: \"number\" },\n    msg: { type: \"string\" },\n    rows: {\n      type: \"array\",\n      items: {\n        type: \"object\",\n        required: [\"userId\", \"userName\", \"nickName\", \"status\"],\n        properties: {\n          userId: { type: \"number\" },\n          userName: { type: \"string\" },\n          nickName: { type: \"string\" },\n          status: { type: \"string\" }\n        }\n      }\n    }\n  }\n};\npm.test(\"JSON Schema 校验通过\", () => pm.response.to.have.jsonSchema(schema));\n// 提取第一个用户，供详情/改状态/重置密码等接口复用\nif (json.rows && json.rows.length > 0) {\n  pm.environment.set(\"userId\", String(json.rows[0].userId));\n}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "userName",
+                  "value": "",
+                  "description": "模糊查询：按登录账号过滤，可做参数化",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "0",
+                  "description": "0 正常 / 1 停用",
+                  "disabled": true
+                },
+                {
+                  "key": "phonenumber",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "beginTime",
+                  "value": "",
+                  "description": "创建时间起，格式 yyyy-MM-dd",
+                  "disabled": true
+                },
+                {
+                  "key": "endTime",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "用户列表（分页 + 多条件查询）。这是练习断言体系的主战场。"
+          },
+          "response": []
+        },
+        {
+          "name": "02 用户详情 GET /system/user/{{userId}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"userId 与请求一致\", () => {",
+                  "  pm.expect(String(json.data.userId)).to.eql(String(pm.environment.get(\"userId\")));",
+                  "});",
+                  "pm.test(\"详情返回角色与岗位集合\", () => {",
+                  "  pm.expect(json).to.have.property(\"roleIds\");",
+                  "  pm.expect(json).to.have.property(\"postIds\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "{{userId}}"
+              ]
+            },
+            "description": "用户详情。返回 data(用户)、roleIds、postIds 等。"
+          },
+          "response": []
+        },
+        {
+          "name": "03 新增用户 POST /system/user",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 唯一化命名 + 唯一手机号：若依会校验 userName 和 phonenumber 的唯一性，",
+                  "// 两者都必须每次不同，否则第二次跑集合就会因「登录账号已存在」而失败。",
+                  "if (!pm.environment.get(\"newUserName\") || pm.environment.get(\"newUserName\").indexOf(\"autotest\") !== 0) {",
+                  "  const rnd = Math.floor(Math.random() * 100000);",
+                  "  pm.environment.set(\"newUserName\", \"autotest\" + rnd);",
+                  "  const suffix = String(Math.floor(Math.random() * 100000000)).padStart(8, \"0\");",
+                  "  pm.environment.set(\"newUserPhone\", \"138\" + suffix);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（新增成功）\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"提示新增成功\", () => pm.expect(json.msg).to.include(\"成功\"));",
+                  "// 记录本次创建的账号，供「修改/删除/清理」步骤使用",
+                  "console.log(\"本次新增账号：\" + pm.environment.get(\"newUserName\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{newUserName}}\",\n  \"nickName\": \"自动化测试账号\",\n  \"password\": \"Test@123456\",\n  \"deptId\": 100,\n  \"roleIds\": [2],\n  \"postIds\": [],\n  \"email\": \"autotest@ruoyi.com\",\n  \"phonenumber\": \"{{newUserPhone}}\",\n  \"sex\": \"0\",\n  \"status\": \"0\",\n  \"remark\": \"Postman 接口自动化创建，用例结束后清理\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/system/user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user"
+              ]
+            },
+            "description": "新增用户。deptId/roleIds/postIds 需为系统内已存在的 ID。"
+          },
+          "response": []
+        },
+        {
+          "name": "04 按新账号查询并提取 userId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"能查到刚新增的账号（数据一致性验证）\", () => {",
+                  "  pm.expect(json.rows.length, JSON.stringify(json)).to.be.above(0);",
+                  "  pm.expect(json.rows[0].userName).to.eql(pm.environment.get(\"newUserName\"));",
+                  "});",
+                  "if (json.rows && json.rows.length > 0) {",
+                  "  pm.environment.set(\"newUserId\", String(json.rows[0].userId));",
+                  "  console.log(\"新用户 userId = \" + json.rows[0].userId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/list?pageNum=1&pageSize=10&userName={{newUserName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "userName",
+                  "value": "{{newUserName}}"
+                }
+              ]
+            },
+            "description": "新增后的回查：验证数据真正落库，并提取 userId 供后续接口使用。这是「接口关联 + 数据一致性」的典型练法。"
+          },
+          "response": []
+        },
+        {
+          "name": "05 修改用户 PUT /system/user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（修改成功）\", () => pm.expect(json.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": {{newUserId}},\n  \"userName\": \"{{newUserName}}\",\n  \"nickName\": \"自动化测试账号-已修改\",\n  \"deptId\": 100,\n  \"roleIds\": [2],\n  \"postIds\": [],\n  \"email\": \"autotest_updated@ruoyi.com\",\n  \"phonenumber\": \"{{newUserPhone}}\",\n  \"sex\": \"1\",\n  \"status\": \"0\",\n  \"remark\": \"Postman 修改验证\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/system/user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user"
+              ]
+            },
+            "description": "修改用户信息（同时修改昵称、邮箱、电话、性别，便于回查验证）。"
+          },
+          "response": []
+        },
+        {
+          "name": "06 启用/停用 PUT /system/user/changeStatus",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（状态变更成功）\", () => pm.expect(json.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": {{newUserId}},\n  \"status\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/system/user/changeStatus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "changeStatus"
+              ]
+            },
+            "description": "启用/停用用户。status: 0 正常 / 1 停用。注意：不能停用 admin 自身（可做负向用例）。"
+          },
+          "response": []
+        },
+        {
+          "name": "07 重置密码 PUT /system/user/resetPwd",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（重置成功）\", () => pm.expect(json.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": {{newUserId}},\n  \"password\": \"NewPass@123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/system/user/resetPwd",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "resetPwd"
+              ]
+            },
+            "description": "重置密码。进阶练法：重置后用新密码登录，验证密码真的生效。"
+          },
+          "response": []
+        },
+        {
+          "name": "08 导出 Excel GET /system/user/export",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"返回文件流而非 JSON\", () => {",
+                  "  const ct = pm.response.headers.get(\"Content-Type\") || \"\";",
+                  "  // 实测若依返回：application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8",
+                  "  // 原来写的 /octet-stream|excel|download/ 一个词都匹配不上——真实的断言写错案例",
+                  "  pm.expect(ct).to.match(/spreadsheet|octet-stream|excel|download/i);",
+                  "});",
+                  "// ⚠️ 导出必须是 POST！用 GET 会被 GET /system/user/{userId} 先匹配，",
+                  "//    把 'export' 当成 userId(Long) 解析，返回 code=500「请求参数类型不匹配」。",
+                  "//    注意这是 HTTP 200 + 业务 500 —— 「必须同时断言业务 code」的活教材。",
+                  "pm.test(\"文件体积大于 0\", () => pm.expect(pm.response.responseSize).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/export?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "导出用户 Excel。返回二进制流，断言方式与 JSON 接口完全不同，是很好的对比练习。"
+          },
+          "response": []
+        },
+        {
+          "name": "09 部门树 GET /system/user/deptTree",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回部门树数组\", () => pm.expect(json.data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/deptTree",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "deptTree"
+              ]
+            },
+            "description": "新增用户页的部门下拉树，用于获取合法 deptId。"
+          },
+          "response": []
+        },
+        {
+          "name": "10 删除用户 DELETE /system/user/{{newUserId}}（数据清理）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（删除成功）\", () => pm.expect(json.code).to.eql(200));",
+                  "// 清理临时变量",
+                  "pm.environment.unset(\"newUserName\");",
+                  "pm.environment.unset(\"newUserId\");"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 前置校验：没有 newUserId 时不要盲删",
+                  "if (!pm.environment.get(\"newUserId\")) {",
+                  "  console.warn(\"newUserId 为空，跳过删除（请先执行新增流程）\");",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/user/{{newUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "user",
+                "{{newUserId}}"
+              ]
+            },
+            "description": "删除用户（支持批量，如 /1,2,3）。放在流程最后作为数据清理，保证用例可重复执行。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 角色/菜单/部门/字典/参数",
+      "item": [
+        {
+          "name": "01 角色列表 GET /system/role/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => {",
+                  "  pm.expect(json).to.have.property(\"total\");",
+                  "  pm.expect(json).to.have.property(\"rows\");",
+                  "  pm.expect(json.rows).to.be.an(\"array\");",
+                  "});",
+                  "if (json.rows && json.rows.length) pm.environment.set(\"roleId\", String(json.rows[0].roleId));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/role/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "role",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "角色列表。可继续练新增角色、分配菜单权限、修改数据范围。"
+          },
+          "response": []
+        },
+        {
+          "name": "02 菜单列表 GET /system/menu/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回菜单数组\", () => pm.expect(json.data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/menu/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "menu",
+                "list"
+              ]
+            },
+            "description": "菜单列表（含按钮级权限）。这里的 perms 字段就是权限标识来源。"
+          },
+          "response": []
+        },
+        {
+          "name": "03 菜单树 GET /system/menu/treeselect",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"树节点含 id/label/children 结构\", () => {",
+                  "  const first = json.data[0];",
+                  "  pm.expect(first).to.have.property(\"id\");",
+                  "  pm.expect(first).to.have.property(\"label\");",
+                  "  pm.expect(first).to.have.property(\"children\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/menu/treeselect",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "menu",
+                "treeselect"
+              ]
+            },
+            "description": "菜单下拉树。可练递归结构的断言。"
+          },
+          "response": []
+        },
+        {
+          "name": "04 部门列表 GET /system/dept/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回部门数组\", () => pm.expect(json.data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/dept/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "dept",
+                "list"
+              ]
+            },
+            "description": "部门列表。"
+          },
+          "response": []
+        },
+        {
+          "name": "05 字典类型列表 GET /system/dict/type/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => { pm.expect(json).to.have.property(\"total\"); pm.expect(json).to.have.property(\"rows\"); pm.expect(json.rows).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/dict/type/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "dict",
+                "type",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "字典类型列表。"
+          },
+          "response": []
+        },
+        {
+          "name": "06 字典数据 GET /system/dict/data/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"按 dictType 过滤生效\", () => {",
+                  "  json.rows.forEach(r => pm.expect(r.dictType).to.eql(\"sys_user_sex\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/dict/data/list?pageNum=1&pageSize=10&dictType=sys_user_sex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "dict",
+                "data",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "dictType",
+                  "value": "sys_user_sex"
+                }
+              ]
+            },
+            "description": "按字典类型查字典数据。适合练「过滤条件是否真正生效」这类断言。"
+          },
+          "response": []
+        },
+        {
+          "name": "07 参数列表 GET /system/config/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => { pm.expect(json).to.have.property(\"total\"); pm.expect(json).to.have.property(\"rows\"); pm.expect(json.rows).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/config/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "config",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "系统参数列表。"
+          },
+          "response": []
+        },
+        {
+          "name": "08 按 key 查参数 GET /system/config/configKey/...",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回验证码开关配置\", () => {",
+                  "  pm.expect(json.msg).to.be.a(\"string\");",
+                  "});",
+                  "// 若返回 false 说明测试环境已关闭验证码，登录可免验证码",
+                  "console.log(\"验证码开关 = \" + JSON.stringify(json.msg));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/config/configKey/sys.account.captchaEnabled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "config",
+                "configKey",
+                "sys.account.captchaEnabled"
+              ]
+            },
+            "description": "按参数键名查询参数值。可用来确认测试环境验证码是否已关闭。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 监控与运维",
+      "item": [
+        {
+          "name": "01 操作日志 GET /monitor/operlog/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => { pm.expect(json).to.have.property(\"total\"); pm.expect(json).to.have.property(\"rows\"); pm.expect(json.rows).to.be.an(\"array\"); });",
+                  "// 数据一致性：前面执行的新增/删除用户操作应被记录到操作日志",
+                  "const hit = json.rows.filter(r => r.title && r.title.indexOf(\"用户\") >= 0);",
+                  "console.log(\"与用户相关的操作日志条数：\" + hit.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/operlog/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "operlog",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "title",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "operName",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "businessType",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "操作日志查询。可与前序 CRUD 操作做交叉验证。"
+          },
+          "response": []
+        },
+        {
+          "name": "02 登录日志 GET /monitor/logininfor/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => { pm.expect(json).to.have.property(\"total\"); pm.expect(json).to.have.property(\"rows\"); pm.expect(json.rows).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/logininfor/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "logininfor",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "登录日志。可验证登录成功/失败是否都被记录。"
+          },
+          "response": []
+        },
+        {
+          "name": "03 在线用户 GET /monitor/online/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"在线用户结构正确\", () => {",
+                  "  pm.expect(json.rows).to.be.an(\"array\");",
+                  "  if (json.rows.length) {",
+                  "    pm.expect(json.rows[0]).to.have.property(\"tokenId\");",
+                  "    pm.expect(json.rows[0]).to.have.property(\"userName\");",
+                  "  }",
+                  "});",
+                  "pm.test(\"当前登录用户在列表中\", () => {",
+                  "  const me = json.rows.filter(r => r.userName === pm.environment.get(\"username\"));",
+                  "  pm.expect(me.length).to.be.above(0);",
+                  "});",
+                  "if (json.rows && json.rows.length) pm.environment.set(\"tokenId\", json.rows[0].tokenId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/online/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "online",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "在线用户列表。可提取 tokenId 后调用强退接口。"
+          },
+          "response": []
+        },
+        {
+          "name": "04 强退在线用户 DELETE /monitor/online/{{tokenId}}（谨慎）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "// ============================================================",
+                  "// 关键善后：强退的就是当前 admin 自己的会话，服务端那边 token 已经作废，",
+                  "// 但本地环境变量里还存着它。如果不处理，后面每一条请求都会 401。",
+                  "// 这里主动清空本地 token，下一条请求的集合级 Pre-request 就会自动重新登录。",
+                  "// ------------------------------------------------------------",
+                  "// 这体现一个通用原则：接口有副作用时，用例要负责善后，不能把烂摊子",
+                  "// 留给后面的用例——否则用例之间就产生了隐式依赖。",
+                  "// ============================================================",
+                  "pm.environment.unset(\"token\");",
+                  "pm.environment.unset(\"tokenObtainedAt\");",
+                  "console.log(\"已强退当前会话，本地 token 已清空，下一条请求将自动重新登录\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/online/{{tokenId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "online",
+                "{{tokenId}}"
+              ]
+            },
+            "description": "强退指定在线用户（tokenId 取自「03 在线用户」的返回值）。\n\n⚠️ 这里强退的就是当前 admin 自己的会话，所以服务端会立刻作废这个 token。\n由于本地环境变量里还存着它，若不处理，后面每一条请求都会返回 401。\n本请求的 Test 脚本已做善后：强退成功后清空本地 token，下一条请求会由集合级的\nPre-request 自动重新登录。\n\n这是一个很典型的接口测试设计原则：接口有副作用时，用例必须负责善后，\n否则就把自己的状态泄漏给了后面的用例（隐式依赖）。"
+          },
+          "response": []
+        },
+        {
+          "name": "05 服务监控 GET /monitor/server",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回 CPU/内存/JVM/磁盘 监控数据\", () => {",
+                  "  pm.expect(json.data).to.have.property(\"cpu\");",
+                  "  pm.expect(json.data).to.have.property(\"mem\");",
+                  "  pm.expect(json.data).to.have.property(\"jvm\");",
+                  "  pm.expect(json.data).to.have.property(\"sys\");",
+                  "});",
+                  "console.log(\"CPU 核心数：\" + json.data.cpu.cpuNum + \"，JVM 已用内存：\" + json.data.jvm.used + \"M\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/server",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "server"
+              ]
+            },
+            "description": "服务器监控信息（CPU/内存/磁盘/JVM）。字段较多，适合练多层级字段断言。"
+          },
+          "response": []
+        },
+        {
+          "name": "06 缓存监控 GET /monitor/cache",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"返回 Redis 信息\", () => {",
+                  "  pm.expect(json.data).to.have.property(\"info\");",
+                  "  pm.expect(json.data).to.have.property(\"dbSize\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cache",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cache"
+              ]
+            },
+            "description": "Redis 缓存监控。同时验证了 Redis 依赖是否正常。"
+          },
+          "response": []
+        },
+        {
+          "name": "07 定时任务列表 GET /monitor/job/list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200\", () => pm.expect(json.code).to.eql(200));",
+                  "pm.test(\"分页结构正确\", () => { pm.expect(json).to.have.property(\"total\"); pm.expect(json).to.have.property(\"rows\"); pm.expect(json.rows).to.be.an(\"array\"); });",
+                  "if (json.rows && json.rows.length) {",
+                  "  pm.environment.set(\"jobId\", String(json.rows[0].jobId));",
+                  "  pm.environment.set(\"jobGroup\", json.rows[0].jobGroup || \"DEFAULT\");",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/job/list?pageNum=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "job",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "定时任务列表（Quartz）。"
+          },
+          "response": []
+        },
+        {
+          "name": "08 手动执行一次任务 PUT /monitor/job/run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"业务 code = 200（触发成功）\", () => pm.expect(json.code).to.eql(200));",
+                  "// 异步验证：执行后可在「定时任务日志」中核对执行结果"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobId\": {{jobId}},\n  \"jobGroup\": \"{{jobGroup}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/monitor/job/run",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "job",
+                "run"
+              ]
+            },
+            "description": "手动触发一次定时任务。异步场景，练「如何验证异步结果」（查日志表）。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 通用能力（文件/上传下载）",
+      "item": [
+        {
+          "name": "01 文件上传 POST /common/upload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));\nconst json = pm.response.json();\n// 自诊断：上传失败 90% 不是接口的问题，而是 Postman 没能读到本地文件\n// 典型特征：msg 为 null（空字段）或含 is null / ContentType（Spring 收到 null MultipartFile）\nif (json.code !== 200) {\n  const m = String(json.msg || \"\");\n  console.warn(\"上传失败，原始响应：\" + JSON.stringify(json));\n  if (json.msg === null || m.indexOf(\"is null\") >= 0 || m.indexOf(\"ContentType\") >= 0) {\n    console.warn(\"👉 服务端没收到任何文件。请到 Body → form-data → file 行点 Select Files 手动选一次文件。\");\n  }\n}\npm.test(\"业务 code = 200（上传成功）\", () => pm.expect(json.code, JSON.stringify(json)).to.eql(200));\npm.test(\"返回 url / fileName / newFileName / originalFilename\", () => {\n  pm.expect(json).to.have.property(\"url\");\n  pm.expect(json).to.have.property(\"fileName\");\n  pm.expect(json).to.have.property(\"newFileName\");\n  pm.expect(json).to.have.property(\"originalFilename\");\n});\npm.environment.set(\"fileName\", json.fileName);\npm.environment.set(\"uploadedUrl\", json.url);\nconsole.log(\"上传成功，访问地址：\" + json.url);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "示例文件放在纯英文路径，避免中文路径导致 Postman 读不到文件。若仍提示读不到，点 Select Files 手动选一次（路径会自动存进这个请求）。",
+                  "src": [
+                    "/E:/ruoyi-test/sample-upload.txt"
+                  ]
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/common/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "common",
+                "upload"
+              ]
+            },
+            "description": "通用文件上传（multipart/form-data，字段名固定为 file）。\n\n⚠️ 实测结论（Postman 11，中文路径与纯英文路径均已复现）：\nPostman GUI【不会】自动使用集合 JSON 里的 src 路径去读文件。导入集合后，file 字段对本机 Postman 而言等同于「未选择」，必须在 Body → form-data → file 行点 Select Files 手动选一次；否则服务端收到的是 null MultipartFile，返回 code=500 且 msg 里含 is null。手动选一次后，这个选择会保存在本机 Postman 中，之后 Runner 可直接跑。\n\n✅ 但 Newman（命令行 / CI 阶段）会自动按 src 路径读文件，无需手动选——所以 src 仍然有意义。\n\nsrc 指向 E:\\ruoyi-test\\sample-upload.txt（刻意用纯英文路径，规避任何编码风险）。\n\n边界测试请另备 4 类文件：正常图片 / 超大文件(>10MB) / 非法后缀(.exe) / 空文件(0 字节)。"
+          },
+          "response": []
+        },
+        {
+          "name": "02 文件下载 GET /common/download/resource",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"返回文件流\", () => {",
+                  "  const cd = pm.response.headers.get(\"Content-Disposition\") || \"\";",
+                  "  pm.expect(cd).to.match(/attachment/i);",
+                  "});",
+                  "pm.test(\"文件体积大于 0\", () => pm.expect(pm.response.responseSize).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/common/download/resource?resource={{fileName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "common",
+                "download",
+                "resource"
+              ],
+              "query": [
+                {
+                  "key": "resource",
+                  "value": "{{fileName}}"
+                }
+              ]
+            },
+            "description": "下载上传的文件。⚠️ 必须用 /common/download/resource：\n/common/download 读的是 {profile}/download/（服务器端下载目录），\n而 /common/upload 写的是 {profile}/upload/，两者不是一对，用错了会拿到 0 字节的空响应。\nresource 参数取自上传接口返回的 fileName（形如 /profile/upload/2026/10/09/xxx.txt）。"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// ============================================================",
+          "// 集合级 Pre-request：token 缺失或临近过期时自动登录",
+          "// ------------------------------------------------------------",
+          "// 解决的核心问题：用例之间不能有隐式依赖。",
+          "// 有了这段脚本，不管从哪个文件夹、哪一条请求开始跑，token 都是有效的。",
+          "// 原理：Postman 会等 pm.sendRequest 的回调执行完，再把当前请求发出去。",
+          "// ============================================================",
+          "",
+          "const baseUrl = pm.environment.get(\"baseUrl\");",
+          "const path = (pm.request.url.getPath && pm.request.url.getPath()) || String(pm.request.url);",
+          "",
+          "// ① 登录/验证码接口自身必须跳过，否则会无限递归",
+          "//    注意：必须精确匹配，不能用 indexOf 包含判断——",
+          "//    否则 /monitor/logininfor/list（登录日志）会被误判成登录接口",
+          "const AUTH_FLOW_PATHS = [\"/login\", \"/captchaImage\"];",
+          "const isAuthFlow = AUTH_FLOW_PATHS.some(function (p) {",
+          "  return path === p || path.endsWith(p);",
+          "});",
+          "",
+          "// ② 手动开关：把环境变量 skipAutoLogin 设为 true 可临时关闭（调试用）",
+          "const skipFlag = String(pm.environment.get(\"skipAutoLogin\")) === \"true\";",
+          "",
+          "// ③ 判断 token 是否缺失或过期",
+          "//    若依 token 默认 30 分钟过期（token.expireTime），这里留 5 分钟安全边际按 25 分钟算",
+          "const ttlMs = Number(pm.environment.get(\"tokenTtlMinutes\") || 25) * 60 * 1000;",
+          "const token = pm.environment.get(\"token\");",
+          "const obtainedAt = Number(pm.environment.get(\"tokenObtainedAt\") || 0);",
+          "const isStale = !token || (Date.now() - obtainedAt) > ttlMs;",
+          "",
+          "if (isAuthFlow || skipFlag || !isStale) {",
+          "  // token 还有效（或本条请求属于登录流程），什么都不做，直接发原始请求",
+          "} else {",
+          "  console.log(\"token 缺失或已过期 → 自动登录中...\");",
+          "",
+          "  const loginRequest = {",
+          "    url: baseUrl + \"/login\",",
+          "    method: \"POST\",",
+          "    header: { \"Content-Type\": \"application/json\" },",
+          "    body: {",
+          "      mode: \"raw\",",
+          "      raw: JSON.stringify({",
+          "        username: pm.environment.get(\"username\"),",
+          "        password: pm.environment.get(\"password\"),",
+          "        code: \"\",",
+          "        uuid: \"\"",
+          "      })",
+          "    }",
+          "  };",
+          "",
+          "  pm.sendRequest(loginRequest, function (err, res) {",
+          "    if (err) {",
+          "      console.error(\"自动登录失败（网络层）：\" + err);",
+          "      return;",
+          "    }",
+          "    let json = null;",
+          "    try {",
+          "      json = res.json();",
+          "    } catch (e) {",
+          "      console.error(\"自动登录响应不是 JSON：\" + res.text());",
+          "      return;",
+          "    }",
+          "    if (json && json.code === 200 && json.token) {",
+          "      pm.environment.set(\"token\", json.token);",
+          "      pm.environment.set(\"tokenObtainedAt\", String(Date.now()));",
+          "      console.log(\"✅ 自动登录成功，token 已刷新\");",
+          "    } else {",
+          "      console.error(\"自动登录未拿到 token，响应：\" + JSON.stringify(json));",
+          "    }",
+          "  });",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// ============================================================",
+          "// 集合级 Test：401 自愈（保险丝，正常跑不会触发）",
+          "// ------------------------------------------------------------",
+          "// 兜底场景：token 在服务端被作废，但本地变量不知道。比如——",
+          "//   · 会话被别处强退（在线用户页面点了强退）",
+          "//   · Redis 重启导致 token 全部丢失",
+          "//   · 手工改过 token 的有效期",
+          "// 处理方式：清空本地 token → 重放当前请求一次（最多一次，防止死循环）。",
+          "//           重放时集合级 Pre-request 会发现 token 为空并自动登录。",
+          "// ------------------------------------------------------------",
+          "// 注意：Pre-request 只能判断「本地」token 是否缺失/过期，",
+          "//       无法知道服务端是否已把它作废——所以必须有这层兜底。",
+          "// ============================================================",
+          "",
+          "// 这个用例是【故意】要 401 的，绝不能触发自愈",
+          "const EXPECT_401 = [\"06 未授权访问（反向用例）GET /system/user/list\"];",
+          "",
+          "let json = null;",
+          "try { json = pm.response.json(); } catch (e) { /* 文件流等非 JSON 响应，直接跳过 */ }",
+          "",
+          "const is401 = json && json.code === 401;",
+          "const retried = pm.environment.get(\"autoRetry\") === \"1\";",
+          "",
+          "if (is401 && EXPECT_401.indexOf(pm.info.requestName) === -1) {",
+          "  console.warn(\"收到 401（token 已过期或被服务端作废）→ 清空本地 token\");",
+          "  pm.environment.unset(\"token\");",
+          "  pm.environment.unset(\"tokenObtainedAt\");",
+          "  if (!retried) {",
+          "    pm.environment.set(\"autoRetry\", \"1\");",
+          "    console.log(\"👉 自动重放当前请求：\" + pm.info.requestName);",
+          "    pm.execution.setNextRequest(pm.info.requestName);",
+          "  } else {",
+          "    pm.environment.unset(\"autoRetry\");",
+          "    console.error(\"重放后仍 401。请检查：账号是否因连续 5 次密码错误被锁定 10 分钟、或权限是否不足\");",
+          "  }",
+          "} else if (retried) {",
+          "  // 重放成功，清掉重试标记",
+          "  pm.environment.unset(\"autoRetry\");",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
+  ]
+}
