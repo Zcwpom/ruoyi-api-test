@@ -27,7 +27,6 @@
 ├── postman/                                   # 集合和环境变量
 ├── jmeter/                                    # JMeter 性能测试
 │   ├── 性能测试报告-若依.md                     # 完整性能测试报告
-│   ├── JMeter学习笔记.md                       # JMeter 学习记录
 │   ├── data/users-ruoyi.csv                    # 压测参数化数据
 │   ├── plans/                                  # 6 个压测脚本
 │   └── report/ruoyi-load-report/               # HTML 仪表盘报告
